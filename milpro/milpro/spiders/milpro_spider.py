@@ -4,6 +4,7 @@ from scrapy.http import FormRequest
 from scrapy.http import Request
 import requests
 from lxml import etree
+from milpro.items import MilproItem
 import hashlib
 from scrapy.selector import Selector
 from scrapy.http import XmlResponse
@@ -118,8 +119,9 @@ class MilproSpider(scrapy.spiders.Spider):
         root_node = xml_file.getroot()
         results = root_node.xpath('//RESULT')
         for sub_root in results:
-            for tag in sub_root:
-                print tag.text
+            item['title'] = sub_root.find('TITLE').text
+            item['source'] = sub_root.find('SOURCE').text
+            #item['date'] = sub_root.find('').text
 
 
 
