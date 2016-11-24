@@ -8,13 +8,20 @@ from milpro.items import MilproItem
 import hashlib
 from scrapy.selector import Selector
 from scrapy.http import XmlResponse
+import urllib2
+import urlparse
+from bs4 import BeautifulSoup
+import codecs
+import re
+import pymongo
+
 
 
 class MilproSpider(scrapy.spiders.Spider):
     name = "mil"
-    start_urls = [
-        'http://search.mod.gov.cn/search/action/searchht.jsp'
-    ]
+    # start_urls = [
+    #     'http://search.mod.gov.cn/search/action/searchht.jsp'
+    # ]
     strs = ['军民融合',
             # '军民结合',
             # '寓军于民',
@@ -54,14 +61,17 @@ class MilproSpider(scrapy.spiders.Spider):
             # '国防生',
             # '基础设施建设',
             # '国防知识产权',
-            # '军民一体化'
+            '军民一体化'
             ]
-    count = 0
+    count = -1
+    client = pymongo.MongoClient('0.0.0.0',27017)
+    db = client.milpro
+    collection = db.collection
 
     def start_requests(self):
         ans = []
         for s in self.strs:
-            response = requests.post(
+            request = requests.post(
                 'http://search.mod.gov.cn/search/action/searchht.jsp',
                 data={
                     'basenames': 'gfb_sck_gdk_view',
@@ -86,13 +96,16 @@ class MilproSpider(scrapy.spiders.Spider):
                     '_':''
                 }
             )
-            ans.append(response)
+            ans.append(request)
+
 
         ans_total = []
-        for a in ans:
-            ans_total.append(self.parse(a))
 
-        return ans_total
+        for a in ans:
+            self.parse(a)
+
+        return tuple(ans)
+
 
     # _id = scrapy.Field()
     # title = scrapy.Field()
@@ -108,20 +121,55 @@ class MilproSpider(scrapy.spiders.Spider):
     # abstract = scrapy.Field()
     # event = scrapy.Field()
 
+
+    def get_content(self, url):
+        response = urllib2.urlopen(url)
+
+        text = response.read()
+        soup = BeautifulSoup(text, 'html.parser', from_encoding='utf-8')
+        ans = ''
+        zi = soup.find('div', class_='zi')
+        ps = zi.find_all('p')
+        for p in ps:
+             ans = ans + p.get_text()
+
+        return ans
+
     def parse(self, response):
+        # print 'iiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiitem'
+        self.count += 1
         filename = str(self.count) + '.xml'
         with open(filename, 'wb') as f:
             f.write(response.text.encode('utf-8'))
 
-        self.count += 1
 
         xml_file = etree.parse(filename)
         root_node = xml_file.getroot()
         results = root_node.xpath('//RESULT')
         for sub_root in results:
+            item = MilproItem()
             item['title'] = sub_root.find('TITLE').text
             item['source'] = sub_root.find('SOURCE').text
-            #item['date'] = sub_root.find('').text
+            item['date'] = sub_root.find('PUBLISHTIME').text
+            item['author'] = sub_root.find('AUTHOR').text
+            item['url'] = sub_root.find('URL').text
+            try:
+                item['content'] = self.get_content( sub_root.find('URL').text )
+            except:
+                item['content'] = sub_root.find('CONTENT').text
+
+            item['readNum'] = ''
+            item['commentNum'] = ''
+            item['isHandled'] = ''
+            item['keywords'] = sub_root.find('KEYWORD').text
+            item['abstract'] = sub_root.find('CONTENT').text
+            item['event'] =''
+            item['_id'] = hashlib.sha1(str(sub_root.find('TRSID').text)).hexdigest()
+            self.collection.insert(item)
+            #yield item
+
+
+
 
 
 
